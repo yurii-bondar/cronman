@@ -2,22 +2,22 @@
 
 [![CI](https://github.com/yurii-bondar/cronman/actions/workflows/ci.yml/badge.svg)](https://github.com/yurii-bondar/cronman/actions/workflows/ci.yml)
 
->#### Content
->[About](#about)<br>
-[Install](#install)
-[Quick start](#quick-start)
-[Defining a job](#defining-a-job)
-[The registry](#the-registry)
-[The scheduler](#the-scheduler)
-[Stores](#stores)
-[Job names and automatic cleanup](#job-names)
-[One run at a time](#one-run-at-a-time)
-[Graceful shutdown](#graceful-shutdown)
-[Logging](#logging)
-[Schedules and timezones](#schedules)
-[Testing](#testing)
-[Known limitations](#known-limitations)
-[License](#license)
+> #### Content
+> [About](#about)<br>
+> [Install](#install)<br>
+> [Quick start](#quick-start)<br>
+> [Defining a job](#defining-a-job)<br>
+> [The registry](#the-registry)<br>
+> [The scheduler](#the-scheduler)<br>
+> [Stores](#stores)<br>
+> [Job names and automatic cleanup](#job-names)<br>
+> [One run at a time](#one-run-at-a-time)<br>
+> [Graceful shutdown](#graceful-shutdown)<br>
+> [Logging](#logging)<br>
+> [Schedules and timezones](#schedules)<br>
+> [Testing](#testing)<br>
+> [Known limitations](#known-limitations)<br>
+> [License](#license)
 
 <a name="about"><h2>About</h2></a>
 
