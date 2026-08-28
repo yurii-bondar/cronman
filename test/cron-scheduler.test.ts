@@ -283,6 +283,17 @@ describe("CronScheduler", () => {
 			expect(logger.error).toHaveBeenCalledWith("cron shutdown timed out", { running: 2 });
 		});
 
+		it("stays quiet when the budget expired with nothing left running", async () => {
+			engine.drainOutcome = { timedOut: true, running: 0 };
+
+			const { cron, logger } = scheduler(engine, registry);
+
+			await cron.start();
+			await cron.stop();
+
+			expect(logger.error).not.toHaveBeenCalled();
+		});
+
 		it("is a no-op before start", async () => {
 			const { cron } = scheduler(engine, registry);
 
