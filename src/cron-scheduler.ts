@@ -133,7 +133,10 @@ export class CronScheduler {
 			closeConnection: false,
 		});
 
-		if (result.timedOut) {
+		// The budget can expire in the same moment the last job finishes, and a
+		// timeout with nothing left running is not a problem worth an error in
+		// the log — least of all one that can wake somebody up.
+		if (result.timedOut && result.running > 0) {
 			this.logger.error("cron shutdown timed out", { running: result.running });
 		}
 		this.engine = undefined;
