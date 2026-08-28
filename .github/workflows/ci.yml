@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20.x, 22.x, 24.x]
+
+    # The integration suite skips a driver whose URL is absent, so these three
+    # are what turn it on. Without them the unit suite still runs in full.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: cronman
+          POSTGRES_PASSWORD: cronman
+          POSTGRES_DB: cronman
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+      mongo:
+        image: mongo:7
+        ports: ["27017:27017"]
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run test:coverage
+        env:
+          CRONMAN_TEST_POSTGRES_URL: postgresql://cronman:cronman@127.0.0.1:5432/cronman
+          CRONMAN_TEST_MONGO_URL: mongodb://127.0.0.1:27017/cronman
+          CRONMAN_TEST_REDIS_URL: redis://127.0.0.1:6379

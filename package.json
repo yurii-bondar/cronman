@@ -1,0 +1,87 @@
+{
+  "name": "cronman",
+  "version": "0.1.0",
+  "description": "Typed cron jobs on top of Agenda: one class per job, one registry, and Postgres, MongoDB or Redis as the store",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yurii-bondar/cronman.git"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "cron",
+    "agenda",
+    "scheduler",
+    "jobs",
+    "postgres",
+    "mongodb",
+    "redis",
+    "typescript"
+  ],
+  "author": {
+    "name": "Yurii Bondar",
+    "email": "yurii.bondar.vn@gmail.com"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "agenda": "6.2.6"
+  },
+  "peerDependencies": {
+    "@agendajs/mongo-backend": "^4.0.3",
+    "@agendajs/postgres-backend": "^3.0.6",
+    "@agendajs/redis-backend": "^3.0.7",
+    "mongodb": "^6.0.0 || ^7.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@agendajs/postgres-backend": {
+      "optional": true
+    },
+    "@agendajs/mongo-backend": {
+      "optional": true
+    },
+    "@agendajs/redis-backend": {
+      "optional": true
+    },
+    "mongodb": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@agendajs/mongo-backend": "^4.0.3",
+    "@agendajs/postgres-backend": "^3.0.6",
+    "@agendajs/redis-backend": "^3.0.7",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.2.0",
+    "@types/pg": "^8.23.1",
+    "@vitest/coverage-v8": "^4.1.11",
+    "eslint": "^10.8.1",
+    "mongodb": "^6.20.0",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.66.0",
+    "vitest": "^4.1.11"
+  }
+}
