@@ -16,6 +16,9 @@
     "README.md",
     "LICENSE"
   ],
+  "publishConfig": {
+    "provenance": true
+  },
   "engines": {
     "node": ">=18.0.0"
   },
