@@ -196,6 +196,7 @@ store: { driver: 'postgres', poolConfig: { ...   } }       // its own, your sett
 | `pool` | — | An existing `pg.Pool`. **Never closed by cronman.** Preferred: no second pool. |
 | `poolConfig` | — | Full `pg.PoolConfig` for a pool the backend opens **and closes**: `max`, `options`, timeouts. |
 | `tableName` | `agenda_jobs` | Created on connect. A plain identifier — see below. |
+| `logTableName` | `agenda_logs` | Job log table, created on connect. A plain identifier. |
 | `channelName` | `agenda_jobs` | `LISTEN`/`NOTIFY` channel. A plain identifier. |
 | `ensureSchema` | `true` | Set `false` if migrations own the table. |
 | `disableNotifications` | `false` | Fall back to polling only. |
@@ -219,6 +220,12 @@ connection at another one. `tableName` cannot do it — the backend quotes it as
 single identifier and also splices it into a function name, so `'app.jobs'` is a
 table *called* `app.jobs`, not `jobs` in schema `app`. cronman refuses that name
 rather than letting the confusion reach Postgres.
+
+The same check holds every Postgres name to ASCII letters, digits, `_` and `$`,
+starting with a letter or `_`, and to a length that leaves room for the index and
+trigger names the backend derives from it — 45 bytes for the two table names, 63
+for the channel. Postgres truncates past 63 silently, which is how two tables
+that differ only in their tail end up sharing one trigger function.
 
 ```ts
 store: {

@@ -44,8 +44,18 @@ export interface PostgresStoreConfig {
 	 * table called `app.jobs`, never `jobs` in schema `app`. To place the
 	 * tables in a schema, point the connection at it:
 	 * `poolConfig: { connectionString, options: "-c search_path=app" }`.
+	 *
+	 * At most 45 bytes: the backend derives index and trigger-function names
+	 * from it, and Postgres truncates anything past 63 without a word.
 	 */
 	tableName?: string;
+
+	/**
+	 * Table the job log lives in, written when a job records progress or a
+	 * failure reason. Created on connect alongside `tableName`, and held to the
+	 * same rule. Default `agenda_logs`.
+	 */
+	logTableName?: string;
 
 	/** LISTEN/NOTIFY channel, a plain identifier. Default `agenda_jobs`. */
 	channelName?: string;

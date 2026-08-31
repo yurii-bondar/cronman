@@ -87,6 +87,60 @@ describe("createBackend", () => {
 			).rejects.toThrow(/must be a plain identifier[\s\S]*search_path=cron/);
 		});
 
+		it("passes the log table through and holds it to the same rule", async () => {
+			await createBackend({
+				driver: "postgres",
+				connectionString: "postgresql://localhost/app",
+				logTableName: "cron_logs",
+			});
+
+			expect(built[0]?.config.logTableName).toBe("cron_logs");
+
+			await expect(
+				createBackend({
+					driver: "postgres",
+					connectionString: "postgresql://localhost/app",
+					logTableName: "cron.logs",
+				}),
+			).rejects.toThrow(/logTableName must be a plain identifier/);
+		});
+
+		it("refuses a tableName Postgres would silently truncate", async () => {
+			await expect(
+				createBackend({
+					driver: "postgres",
+					connectionString: "postgresql://localhost/app",
+					tableName: "a".repeat(46),
+				}),
+			).rejects.toThrow(/tableName must be at most 45 bytes/);
+
+			await createBackend({
+				driver: "postgres",
+				connectionString: "postgresql://localhost/app",
+				tableName: "a".repeat(45),
+			});
+
+			expect(built[0]?.config.tableName).toBe("a".repeat(45));
+		});
+
+		it("gives the channel the full identifier length, since nothing is derived from it", async () => {
+			await createBackend({
+				driver: "postgres",
+				connectionString: "postgresql://localhost/app",
+				channelName: "c".repeat(63),
+			});
+
+			expect(built[0]?.config.channelName).toBe("c".repeat(63));
+
+			await expect(
+				createBackend({
+					driver: "postgres",
+					connectionString: "postgresql://localhost/app",
+					channelName: "c".repeat(64),
+				}),
+			).rejects.toThrow(/channelName must be at most 63 bytes/);
+		});
+
 		it("refuses a channelName that could break out of its quotes", async () => {
 			await expect(
 				createBackend({
