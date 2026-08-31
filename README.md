@@ -179,23 +179,58 @@ again.
 <a name="stores"><h2>Stores</h2></a>
 
 Pick one driver. Every field beyond `driver` goes to the matching
-`@agendajs/*-backend` unchanged.
+`@agendajs/*-backend` unchanged, except that the connection fields are reduced
+to the one that wins and the Postgres identifiers are checked first.
 
 ### Postgres
 
 ```ts
-store: { driver: 'postgres', pool }                     // reuse the app's pg.Pool
-store: { driver: 'postgres', connectionString: '...' }  // or open its own
+store: { driver: 'postgres', pool }                        // reuse the app's pg.Pool
+store: { driver: 'postgres', connectionString: '...' }     // or open its own
+store: { driver: 'postgres', poolConfig: { ...   } }       // its own, your settings
 ```
 
 | Field | Default | Notes |
 |---|---|---|
 | `connectionString` | — | `postgresql://user:pass@host:5432/db` |
 | `pool` | — | An existing `pg.Pool`. **Never closed by cronman.** Preferred: no second pool. |
-| `tableName` | `agenda_jobs` | Created on connect. |
-| `channelName` | `agenda_jobs` | `LISTEN`/`NOTIFY` channel. |
+| `poolConfig` | — | Full `pg.PoolConfig` for a pool the backend opens **and closes**: `max`, `options`, timeouts. |
+| `tableName` | `agenda_jobs` | Created on connect. A plain identifier — see below. |
+| `channelName` | `agenda_jobs` | `LISTEN`/`NOTIFY` channel. A plain identifier. |
 | `ensureSchema` | `true` | Set `false` if migrations own the table. |
 | `disableNotifications` | `false` | Fall back to polling only. |
+
+The three connection forms are tried in the order `pool`, `poolConfig`,
+`connectionString`, and only the first one given is passed on.
+
+**Pass your own `pool` when a lost connection must not end the process.** The
+pool the backend opens for itself carries no `error` listener, and an unhandled
+`error` event on an idle connection is fatal in Node. A pool you build can have
+one:
+
+```ts
+const pool = new Pool({ connectionString, max: 2 });
+
+pool.on('error', (err) => logger.error('cron pool', err.message));
+```
+
+**To keep the tables out of the schema your migrations own**, point the
+connection at another one. `tableName` cannot do it — the backend quotes it as a
+single identifier and also splices it into a function name, so `'app.jobs'` is a
+table *called* `app.jobs`, not `jobs` in schema `app`. cronman refuses that name
+rather than letting the confusion reach Postgres.
+
+```ts
+store: {
+  driver: 'postgres',
+  poolConfig: { connectionString, options: '-c search_path=app' },
+}
+```
+
+The schema has to exist already — create it in a migration
+(`CREATE SCHEMA IF NOT EXISTS "app"`) or by hand. This is what keeps a
+schema-managed database (Prisma, Drizzle, Alembic) from reporting the two
+`agenda` tables as drift.
 
 ### MongoDB
 
@@ -343,10 +378,11 @@ npm test
 
 <a name="known-limitations"><h2>Known limitations</h2></a>
 
-- **The store owns its schema.** The Postgres backend creates its table on
-  connect, Mongo its collection and indexes, Redis its keys. If migrations
-  own your schema instead, set `ensureSchema: false` and create the table
-  yourself.
+- **The store owns its schema.** The Postgres backend creates its tables on
+  connect, Mongo its collection and indexes, Redis its keys. If migrations own
+  your schema instead, either set `ensureSchema: false` and create the tables
+  yourself, or leave the store to it and give it a schema of its own with
+  `search_path` — see [Stores](#stores).
 - **`stop()` does not end the process** — see
   [Graceful shutdown](#graceful-shutdown).
 - **A crontab schedule cannot fire on definition.** `runOnStart` covers the

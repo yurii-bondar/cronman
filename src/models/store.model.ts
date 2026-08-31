@@ -4,9 +4,12 @@
  * so a service on Postgres never pulls in the Mongo or Redis client.
  *
  * Every field beyond `driver` is passed to the matching `@agendajs/*-backend`
- * unchanged. The types of the client objects are deliberately `unknown` rather
- * than imported: the packages that declare them are optional, and importing a
- * type from one of them would make this package fail to compile for anyone who
+ * unchanged, except that the connection fields are reduced to whichever one
+ * wins and the Postgres identifiers are validated before they reach SQL.
+ *
+ * The types of the client objects are deliberately `unknown` rather than
+ * imported: the packages that declare them are optional, and importing a type
+ * from one of them would make this package fail to compile for anyone who
  * installed only the other two.
  */
 export interface PostgresStoreConfig {
@@ -18,13 +21,33 @@ export interface PostgresStoreConfig {
 	/**
 	 * An existing `pg.Pool`. Preferred when the application already has one:
 	 * the scheduler adds no second pool and never closes this one.
+	 *
+	 * Also the only way to attach your own `pool.on("error")` handler. The pool
+	 * the backend opens for itself has none, and an unhandled `error` event on
+	 * an idle connection ends the process.
 	 */
 	pool?: unknown;
 
-	/** Table the jobs live in. Created on connect. Default `agenda_jobs`. */
+	/**
+	 * Full `pg.PoolConfig` for a pool the backend opens and closes itself —
+	 * `connectionString` plus whatever else node-postgres takes (`max`,
+	 * `options`, timeouts). Use it instead of `connectionString` when the
+	 * defaults do not fit; use `pool` when you need to hold the pool yourself.
+	 */
+	poolConfig?: unknown;
+
+	/**
+	 * Table the jobs live in. Created on connect. Default `agenda_jobs`.
+	 *
+	 * A plain identifier, not a qualified name: the backend both quotes it as
+	 * one identifier and splices it into a function name, so `"app.jobs"` is a
+	 * table called `app.jobs`, never `jobs` in schema `app`. To place the
+	 * tables in a schema, point the connection at it:
+	 * `poolConfig: { connectionString, options: "-c search_path=app" }`.
+	 */
 	tableName?: string;
 
-	/** LISTEN/NOTIFY channel. Default `agenda_jobs`. */
+	/** LISTEN/NOTIFY channel, a plain identifier. Default `agenda_jobs`. */
 	channelName?: string;
 
 	/** Create the table and its indexes on connect. Default true. */

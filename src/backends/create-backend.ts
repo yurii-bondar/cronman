@@ -1,4 +1,7 @@
-import type { StoreConfig } from "../models/store.model.js";
+import type { PostgresStoreConfig, StoreConfig } from "../models/store.model.js";
+
+/** What Postgres accepts unquoted, and so what these two names are held to. */
+const PLAIN_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_$]*$/;
 
 /**
  * The backend packages are optional peer dependencies, so they are imported at
@@ -57,12 +60,15 @@ export async function createBackend(store: StoreConfig, load: BackendLoader = im
  */
 function backendConfig(store: StoreConfig): Record<string, unknown> {
 	if (store.driver === "postgres") {
-		if (!store.pool && !store.connectionString) {
-			throw new Error("the postgres cron store needs a connectionString or a pool");
+		if (!store.pool && !store.poolConfig && !store.connectionString) {
+			throw new Error("the postgres cron store needs a connectionString, a poolConfig or a pool");
 		}
 
+		assertPlainIdentifier(store.tableName, "tableName");
+		assertPlainIdentifier(store.channelName, "channelName");
+
 		return {
-			...(store.pool ? { pool: store.pool } : { connectionString: store.connectionString }),
+			...postgresConnection(store),
 			tableName: store.tableName,
 			channelName: store.channelName,
 			ensureSchema: store.ensureSchema,
@@ -91,6 +97,49 @@ function backendConfig(store: StoreConfig): Record<string, unknown> {
 		keyPrefix: store.keyPrefix,
 		channelName: store.channelName,
 	};
+}
+
+/**
+ * Which of the three ways to reach Postgres the config asked for. A pool the
+ * application holds wins over one the backend would open, because only the
+ * first can carry an `error` handler and a lifetime the application controls.
+ */
+function postgresConnection(store: PostgresStoreConfig): Record<string, unknown> {
+	if (store.pool) {
+		return { pool: store.pool };
+	}
+
+	if (store.poolConfig) {
+		return { poolConfig: store.poolConfig };
+	}
+
+	return { connectionString: store.connectionString };
+}
+
+/**
+ * Both names reach Postgres spliced into SQL rather than bound as parameters —
+ * `"${tableName}"` in the DDL, `LISTEN "${channelName}"` — so anything but a
+ * plain identifier is either an injection or, more often, a misunderstanding
+ * worth catching here rather than three queries later.
+ */
+function assertPlainIdentifier(value: string | undefined, field: string): void {
+	if (value === undefined || PLAIN_IDENTIFIER.test(value)) {
+		return;
+	}
+
+	if (value.includes(".")) {
+		throw new Error(
+			`the postgres cron store's ${field} must be a plain identifier: "${value}" names one object containing a dot, ` +
+				`not "${value.slice(value.indexOf(".") + 1)}" in schema "${value.slice(0, value.indexOf("."))}". ` +
+				`To put the tables in a schema, point the connection at it: ` +
+				`poolConfig: { connectionString, options: "-c search_path=${value.slice(0, value.indexOf("."))}" }`,
+		);
+	}
+
+	throw new Error(
+		`the postgres cron store's ${field} must be a plain identifier — a letter or underscore ` +
+			`followed by letters, digits, underscores or $ — got "${value}"`,
+	);
 }
 
 /**
