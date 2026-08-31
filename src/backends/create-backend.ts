@@ -1,7 +1,17 @@
 import type { PostgresStoreConfig, StoreConfig } from "../models/store.model.js";
 
-/** What Postgres accepts unquoted, and so what these two names are held to. */
+/** What Postgres accepts unquoted, and so what these names are held to. */
 const PLAIN_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_$]*$/;
+
+/** Postgres' own limit, past which it truncates an identifier without a word. */
+const IDENTIFIER_MAX_BYTES = 63;
+
+/**
+ * A table name has to survive the longest thing the backend builds out of it,
+ * `update_${tableName}_updated_at`, which spends 18 bytes of the limit before
+ * the name is even written.
+ */
+const TABLE_NAME_MAX_BYTES = IDENTIFIER_MAX_BYTES - "update__updated_at".length;
 
 /**
  * The backend packages are optional peer dependencies, so they are imported at
@@ -64,12 +74,14 @@ function backendConfig(store: StoreConfig): Record<string, unknown> {
 			throw new Error("the postgres cron store needs a connectionString, a poolConfig or a pool");
 		}
 
-		assertPlainIdentifier(store.tableName, "tableName");
-		assertPlainIdentifier(store.channelName, "channelName");
+		assertPlainIdentifier(store.tableName, "tableName", TABLE_NAME_MAX_BYTES);
+		assertPlainIdentifier(store.logTableName, "logTableName", TABLE_NAME_MAX_BYTES);
+		assertPlainIdentifier(store.channelName, "channelName", IDENTIFIER_MAX_BYTES);
 
 		return {
 			...postgresConnection(store),
 			tableName: store.tableName,
+			logTableName: store.logTableName,
 			channelName: store.channelName,
 			ensureSchema: store.ensureSchema,
 			disableNotifications: store.disableNotifications,
@@ -117,13 +129,27 @@ function postgresConnection(store: PostgresStoreConfig): Record<string, unknown>
 }
 
 /**
- * Both names reach Postgres spliced into SQL rather than bound as parameters —
- * `"${tableName}"` in the DDL, `LISTEN "${channelName}"` — so anything but a
- * plain identifier is either an injection or, more often, a misunderstanding
- * worth catching here rather than three queries later.
+ * Every one of these names reaches Postgres spliced into SQL rather than bound
+ * as a parameter — `"${tableName}"` in the DDL, `LISTEN "${channelName}"` — so
+ * anything but a plain identifier is either an injection or, more often, a
+ * misunderstanding worth catching here rather than three queries later.
+ *
+ * The rule is deliberately narrower than Postgres itself, which also accepts
+ * unicode letters: these names are ours to keep boring, and a name that reads
+ * the same in a log line, a psql session and a migration is worth more than the
+ * freedom to call a table `завдання`.
+ *
+ * `maxBytes` is the room left for the name once Postgres' 63-byte identifier
+ * limit has paid for whatever the backend appends to it. Postgres truncates
+ * silently, so two names that differ only past the cut would quietly become one
+ * table, one function, one index.
  */
-function assertPlainIdentifier(value: string | undefined, field: string): void {
-	if (value === undefined || PLAIN_IDENTIFIER.test(value)) {
+function assertPlainIdentifier(value: string | undefined, field: string, maxBytes: number): void {
+	if (value === undefined) {
+		return;
+	}
+
+	if (PLAIN_IDENTIFIER.test(value) && Buffer.byteLength(value) <= maxBytes) {
 		return;
 	}
 
@@ -136,9 +162,18 @@ function assertPlainIdentifier(value: string | undefined, field: string): void {
 		);
 	}
 
+	if (PLAIN_IDENTIFIER.test(value)) {
+		throw new Error(
+			`the postgres cron store's ${field} must be at most ${maxBytes} bytes so that the names Postgres derives ` +
+				`from it still fit in an identifier: "${value}" is ${Buffer.byteLength(value)}, and Postgres would ` +
+				`truncate the overflow without saying so`,
+		);
+	}
+
 	throw new Error(
 		`the postgres cron store's ${field} must be a plain identifier — a letter or underscore ` +
-			`followed by letters, digits, underscores or $ — got "${value}"`,
+			`followed by letters, digits, underscores or $, and ASCII even where Postgres would allow more — ` +
+			`got "${value}"`,
 	);
 }
 
