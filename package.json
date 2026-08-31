@@ -75,6 +75,7 @@
     "@agendajs/postgres-backend": "^3.0.6",
     "@agendajs/redis-backend": "^3.0.7",
     "@eslint/js": "^10.0.1",
+    "@semantic-release/git": "^11.0.1",
     "@types/node": "^24.2.0",
     "@types/pg": "^8.23.1",
     "@vitest/coverage-v8": "^4.1.11",

@@ -52,10 +52,103 @@ describe("createBackend", () => {
 		it("prefers a pool the application already holds", async () => {
 			const pool = { marker: "the app pool" };
 
-			await createBackend({ driver: "postgres", pool, connectionString: "postgresql://ignored" });
+			await createBackend({
+				driver: "postgres",
+				pool,
+				poolConfig: { marker: "ignored" },
+				connectionString: "postgresql://ignored",
+			});
 
 			expect(built[0]?.config.pool).toBe(pool);
+			expect(built[0]?.config).not.toHaveProperty("poolConfig");
 			expect(built[0]?.config).not.toHaveProperty("connectionString");
+		});
+
+		it("passes a poolConfig through so the backend can size the pool it opens", async () => {
+			const poolConfig = {
+				connectionString: "postgresql://localhost/app",
+				options: "-c search_path=cron",
+				max: 2,
+			};
+
+			await createBackend({ driver: "postgres", poolConfig });
+
+			expect(built[0]?.config.poolConfig).toBe(poolConfig);
+			expect(built[0]?.config).not.toHaveProperty("connectionString");
+		});
+
+		it("refuses a tableName that reads as schema-qualified, and names the fix", async () => {
+			await expect(
+				createBackend({
+					driver: "postgres",
+					connectionString: "postgresql://localhost/app",
+					tableName: "cron.agenda_jobs",
+				}),
+			).rejects.toThrow(/must be a plain identifier[\s\S]*search_path=cron/);
+		});
+
+		it("passes the log table through and holds it to the same rule", async () => {
+			await createBackend({
+				driver: "postgres",
+				connectionString: "postgresql://localhost/app",
+				logTableName: "cron_logs",
+			});
+
+			expect(built[0]?.config.logTableName).toBe("cron_logs");
+
+			await expect(
+				createBackend({
+					driver: "postgres",
+					connectionString: "postgresql://localhost/app",
+					logTableName: "cron.logs",
+				}),
+			).rejects.toThrow(/logTableName must be a plain identifier/);
+		});
+
+		it("refuses a tableName Postgres would silently truncate", async () => {
+			await expect(
+				createBackend({
+					driver: "postgres",
+					connectionString: "postgresql://localhost/app",
+					tableName: "a".repeat(46),
+				}),
+			).rejects.toThrow(/tableName must be at most 45 bytes/);
+
+			await createBackend({
+				driver: "postgres",
+				connectionString: "postgresql://localhost/app",
+				tableName: "a".repeat(45),
+			});
+
+			expect(built[0]?.config.tableName).toBe("a".repeat(45));
+		});
+
+		it("gives the channel the full identifier length, since nothing is derived from it", async () => {
+			await createBackend({
+				driver: "postgres",
+				connectionString: "postgresql://localhost/app",
+				channelName: "c".repeat(63),
+			});
+
+			expect(built[0]?.config.channelName).toBe("c".repeat(63));
+
+			await expect(
+				createBackend({
+					driver: "postgres",
+					connectionString: "postgresql://localhost/app",
+					channelName: "c".repeat(64),
+				}),
+			).rejects.toThrow(/channelName must be at most 63 bytes/);
+		});
+
+		it("refuses a channelName that could break out of its quotes", async () => {
+			await expect(
+				createBackend({
+					driver: "postgres",
+					connectionString: "postgresql://localhost/app",
+					channelName: 'cron"; DROP TABLE agenda_jobs; --',
+				}),
+			).rejects.toThrow(/channelName must be a plain identifier/);
 		});
 
 		it("passes the notification and schema switches through", async () => {
@@ -76,7 +169,7 @@ describe("createBackend", () => {
 
 		it("refuses a config with no connection at all", async () => {
 			await expect(createBackend({ driver: "postgres" })).rejects.toThrow(
-				"the postgres cron store needs a connectionString or a pool",
+				"the postgres cron store needs a connectionString, a poolConfig or a pool",
 			);
 		});
 	});
