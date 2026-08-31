@@ -47,7 +47,7 @@ describe("createBackend when the backend package is not usable", () => {
 
 				return {} as BackendModule;
 			}),
-		).rejects.toThrow("needs a connectionString or a pool");
+		).rejects.toThrow("needs a connectionString, a poolConfig or a pool");
 		expect(loaded).toBe(false);
 	});
 });
