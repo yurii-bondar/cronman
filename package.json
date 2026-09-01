@@ -1,6 +1,6 @@
 {
   "name": "cronman",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Typed cron jobs on top of Agenda: one class per job, one registry, and Postgres, MongoDB or Redis as the store",
   "type": "module",
   "main": "./dist/index.js",
