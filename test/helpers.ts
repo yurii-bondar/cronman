@@ -1,3 +1,4 @@
+import type { RetryDetails } from "agenda";
 import { vi } from "vitest";
 import type { CronJobContext, CronLogger } from "../src/models/cron-job.model.js";
 import type { AgendaLike, DrainOutcome } from "../src/models/cron-scheduler.model.js";
@@ -51,12 +52,29 @@ export class FakeAgenda implements AgendaLike {
 
 	failListener?: (error: Error, job: CronJobContext) => void;
 
+	successListener?: (job: CronJobContext) => void;
+
+	completeListener?: (job: CronJobContext) => void;
+
+	retryListener?: (job: CronJobContext, details: RetryDetails) => void;
+
 	db = {
 		getDistinctJobNames: async (): Promise<string[]> => this.storedNames,
 	};
 
-	on(event: "fail", listener: (error: Error, job: CronJobContext) => void): this {
-		if (event === "fail") this.failListener = listener;
+	on(event: "fail", listener: (error: Error, job: CronJobContext) => void): this;
+	on(event: "success" | "complete", listener: (job: CronJobContext) => void): this;
+	on(event: "retry", listener: (job: CronJobContext, details: RetryDetails) => void): this;
+	on(
+		event: "fail" | "success" | "complete" | "retry",
+		listener: (...args: never[]) => void,
+	): this {
+		if (event === "fail") this.failListener = listener as (error: Error, job: CronJobContext) => void;
+		if (event === "success") this.successListener = listener as (job: CronJobContext) => void;
+		if (event === "complete") this.completeListener = listener as (job: CronJobContext) => void;
+		if (event === "retry") {
+			this.retryListener = listener as (job: CronJobContext, details: RetryDetails) => void;
+		}
 
 		return this;
 	}

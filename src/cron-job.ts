@@ -1,3 +1,4 @@
+import type { BackoffStrategy } from "agenda";
 import { cronRegistry } from "./cron-registry.js";
 import type {
 	CronJobContext,
@@ -26,6 +27,20 @@ export class CronJob<Data = void> implements SchedulableCronJob {
 
 	readonly data: unknown;
 
+	readonly logging?: boolean;
+
+	readonly priority?: number;
+
+	readonly backoff?: BackoffStrategy;
+
+	readonly forkMode?: boolean;
+
+	readonly startDate?: Date | string;
+
+	readonly endDate?: Date | string;
+
+	readonly skipDays?: number[];
+
 	private readonly handler: (job: CronJobContext<Data>) => Promise<void>;
 
 	constructor(options: CronJobOptions<Data>) {
@@ -39,6 +54,13 @@ export class CronJob<Data = void> implements SchedulableCronJob {
 		this.runOnStart = options.runOnStart ?? false;
 		this.maxRuntimeMs = options.maxRuntimeMs ?? DEFAULT_MAX_RUNTIME_MS;
 		this.data = options.data;
+		this.logging = options.logging;
+		this.priority = options.priority;
+		this.backoff = options.backoff;
+		this.forkMode = options.forkMode;
+		this.startDate = options.startDate;
+		this.endDate = options.endDate;
+		this.skipDays = options.skipDays;
 		this.handler = options.handler;
 		(options.registry ?? cronRegistry).add(this);
 	}

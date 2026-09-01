@@ -120,6 +120,13 @@ const purgeJob = new CronJob<{ retentionMonths: number }>({
 | `runOnStart` | `boolean` | `false` | One extra run at startup, on top of the schedule. |
 | `maxRuntimeMs` | `number` | `300000` | How long one run may hold its lock. See [One run at a time](#one-run-at-a-time). |
 | `registry` | `CronRegistry` | shared | Which registry to join. Mostly for tests. |
+| `logging` | `boolean` | — | Overrides the scheduler's `agendaOptions.logging` default for this job. See [Persistent job logging](#logging). |
+| `priority` | `number` | — | Higher priority jobs run first when several are due at once. |
+| `backoff` | `BackoffStrategy` | — | Retry strategy for a run that throws. Build one with `agenda`'s own `backoffStrategies`, or pass a custom `(context) => delayMs \| null`. |
+| `forkMode` | `boolean` | `false` | Runs this job in a forked child process. Needs `agendaOptions.forkHelper` set on the scheduler. |
+| `startDate` | `Date \| string` | — | The schedule produces no run before this date. |
+| `endDate` | `Date \| string` | — | The schedule produces no run at or after this date. |
+| `skipDays` | `number[]` | — | Days of the week (0 = Sunday … 6 = Saturday) the schedule skips. |
 
 `runOnStart` is queued as a separate one-off run rather than by moving the
 schedule, because a crontab expression always points at the next matching slot
@@ -168,6 +175,7 @@ await cron.stop();
 | `logger` | `CronLogger` | `console` | Where runs report. See [Logging](#logging). |
 | `drainTimeoutMs` | `number` | `8000` | How long `stop()` waits for a running job. |
 | `processEvery` | `string \| number` | `'5 seconds'` | How often the store is polled for due jobs. |
+| `agendaOptions` | `Partial<AgendaOptions>` | — | Any other Agenda option — `logging` chief among them. See [Logging](#logging). |
 | `engine` | `AgendaLike` | — | A ready Agenda instance instead of building one. See [Testing](#testing). |
 
 ¹ `store` is required unless `engine` is given.
@@ -347,6 +355,57 @@ A failing handler is logged **and rethrown**, on purpose: the store records
 the failure, counts it and backs off. A swallowed error turns a broken job
 into one that looks healthy forever. Log what the wrapper cannot know — how
 many rows a pass deleted — and leave the rest to it.
+
+### Persistent job logging
+
+The above is your own application logger. Separately, Agenda can persist every
+job's lifecycle events (start, success, fail, …) to the store itself — the
+Postgres backend, for one, keeps them in `logTableName` (default
+`agenda_logs`). That table exists as soon as the store connects, but sits
+empty until Agenda's own `logging` is turned on, which `store` alone cannot
+do — pass it through `agendaOptions`:
+
+```ts
+const cron = new CronScheduler({
+  service: 'billing',
+  store,
+  agendaOptions: { logging: true },   // every job, using the backend's logger
+});
+```
+
+`agendaOptions.logging` also takes `{ default: false }` to log nothing by
+default, and then a job's own `logging: true` opts it back in:
+
+```ts
+const cron = new CronScheduler({ service: 'billing', store, agendaOptions: { logging: { default: false } } });
+
+new CronJob({ name: 'important', schedule: '...', logging: true, handler });   // logged
+new CronJob({ name: 'noisy', schedule: '...', handler });                     // not logged
+```
+
+`agendaOptions` is not limited to `logging` — anything else `new Agenda()`
+accepts (`defaultConcurrency`, `maxConcurrency`, …) goes through the same way,
+except `backend` and `name`, which the scheduler always derives from `store`
+and `service` itself.
+
+### Job lifecycle events
+
+A failed run is always logged through `logger` — see [above](#logging). For
+the rest of Agenda's lifecycle events, `cron.engine` is the started engine
+itself, and its `on()` covers `fail`, `success`, `complete` and `retry`:
+
+```ts
+await cron.start();
+
+cron.engine?.on('retry', (job, details) => {
+  logger.warn('cron retrying', { job: job.attrs.name, attempt: details.attempt, delay: details.delay });
+});
+```
+
+`cron.engine` is `undefined` before `start()` and after `stop()`. `retry`
+fires when a run throws and `backoff` (a `CronJob` option) schedules another
+attempt rather than letting the store's own failure count take over; `success`
+and `complete` fire once a run ends, the latter regardless of outcome.
 
 <a name="schedules"><h2>Schedules and timezones</h2></a>
 

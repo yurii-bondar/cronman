@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CronJob } from "../src/cron-job.js";
 import { CronRegistry } from "../src/cron-registry.js";
 import { CronScheduler } from "../src/cron-scheduler.js";
@@ -70,6 +70,56 @@ describe("CronScheduler", () => {
 				lockLifetime: 1_800_000,
 				removeOnComplete: true,
 			});
+		});
+
+		it("passes a job's own logging override through to define, and omits it otherwise", async () => {
+			new CronJob({ name: "quiet", schedule: "* * * * *", logging: false, handler: async () => {}, registry });
+			new CronJob({ name: "plain", schedule: "* * * * *", handler: async () => {}, registry });
+
+			await scheduler(engine, registry).cron.start();
+
+			expect(engine.defined[0]?.options).toMatchObject({ logging: false });
+			expect(engine.defined[1]?.options).not.toHaveProperty("logging");
+		});
+
+		it("passes a job's priority and backoff through to define, and omits them otherwise", async () => {
+			const backoff = () => 1_000;
+
+			new CronJob({ name: "urgent", schedule: "* * * * *", priority: 10, backoff, handler: async () => {}, registry });
+			new CronJob({ name: "plain", schedule: "* * * * *", handler: async () => {}, registry });
+
+			await scheduler(engine, registry).cron.start();
+
+			expect(engine.defined[0]?.options).toMatchObject({ priority: 10, backoff });
+			expect(engine.defined[1]?.options).not.toHaveProperty("priority");
+			expect(engine.defined[1]?.options).not.toHaveProperty("backoff");
+		});
+
+		it("passes a job's forkMode, startDate, endDate and skipDays through to every, and omits them otherwise", async () => {
+			const startDate = new Date("2026-01-01T00:00:00Z");
+			const endDate = new Date("2026-12-31T00:00:00Z");
+
+			new CronJob({
+				name: "windowed",
+				schedule: "* * * * *",
+				forkMode: true,
+				startDate,
+				endDate,
+				skipDays: [0, 6],
+				handler: async () => {},
+				registry,
+			});
+			new CronJob({ name: "plain", schedule: "* * * * *", handler: async () => {}, registry });
+
+			await scheduler(engine, registry).cron.start();
+
+			expect(engine.scheduled[0]?.options).toMatchObject({
+				forkMode: true,
+				startDate,
+				endDate,
+				skipDays: [0, 6],
+			});
+			expect(engine.scheduled[1]?.options).toEqual({ timezone: "UTC", skipImmediate: true });
 		});
 
 		it("reads crontab in the configured timezone and never fires on definition", async () => {
@@ -308,6 +358,41 @@ describe("CronScheduler", () => {
 			await cron.stop();
 			await expect(cron.start()).resolves.toMatchObject({ removed: 0 });
 			expect(engine.started).toBe(2);
+		});
+	});
+
+	describe("engine", () => {
+		it("is undefined before start and after stop, and exposes the engine in between", async () => {
+			const { cron } = scheduler(engine, registry);
+
+			expect(cron.engine).toBeUndefined();
+			await cron.start();
+			expect(cron.engine).toBe(engine);
+			await cron.stop();
+			expect(cron.engine).toBeUndefined();
+		});
+
+		it("lets a caller listen for success, complete and retry directly on it", async () => {
+			const { cron } = scheduler(engine, registry);
+			const onSuccess = vi.fn();
+			const onComplete = vi.fn();
+			const onRetry = vi.fn();
+
+			await cron.start();
+			cron.engine?.on("success", onSuccess);
+			cron.engine?.on("complete", onComplete);
+			cron.engine?.on("retry", onRetry);
+
+			const job = jobContext();
+			const details = { attempt: 1, delay: 1_000, nextRunAt: new Date(), error: new Error("boom") };
+
+			engine.successListener?.(job);
+			engine.completeListener?.(job);
+			engine.retryListener?.(job, details);
+
+			expect(onSuccess).toHaveBeenCalledWith(job);
+			expect(onComplete).toHaveBeenCalledWith(job);
+			expect(onRetry).toHaveBeenCalledWith(job, details);
 		});
 	});
 

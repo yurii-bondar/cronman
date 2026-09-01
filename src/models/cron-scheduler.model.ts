@@ -1,3 +1,4 @@
+import type { AgendaOptions, RetryDetails } from "agenda";
 import type { CronJobContext, CronLogger, SchedulableCronJob } from "./cron-job.model.js";
 import type { StoreConfig } from "./store.model.js";
 
@@ -7,6 +8,15 @@ import type { StoreConfig } from "./store.model.js";
  */
 export interface AgendaLike {
 	on(event: "fail", listener: (error: Error, job: CronJobContext) => void): unknown;
+
+	/** A run finished without throwing. */
+	on(event: "success", listener: (job: CronJobContext) => void): unknown;
+
+	/** A run finished either way — fired alongside `success` or `fail`. */
+	on(event: "complete", listener: (job: CronJobContext) => void): unknown;
+
+	/** A failed run was requeued under a `backoff` strategy rather than given up on. */
+	on(event: "retry", listener: (job: CronJobContext, details: RetryDetails) => void): unknown;
 	define(
 		name: string,
 		processor: (job: CronJobContext) => Promise<void>,
@@ -69,6 +79,19 @@ export interface CronSchedulerOptions {
 	 * knows nothing about.
 	 */
 	engine?: AgendaLike;
+
+	/**
+	 * Any other Agenda option — `logging`, `defaultConcurrency`,
+	 * `maxConcurrency`, `defaultLockLimit`, … — passed straight to
+	 * `new Agenda()`. Without it, options Agenda supports but this package
+	 * does not name individually (persistent job logging chief among them)
+	 * have no way to reach the engine at all.
+	 *
+	 * `backend` and `name` stay out of it: the scheduler builds the first from
+	 * `store` and derives the second from `service` and the process id, and an
+	 * override here would fight both.
+	 */
+	agendaOptions?: Omit<AgendaOptions, "backend" | "name">;
 }
 
 /** What one `start()` set up. Returned so a caller can log or assert on it. */

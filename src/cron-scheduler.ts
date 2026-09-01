@@ -31,7 +31,7 @@ export class CronScheduler {
 	 */
 	private readonly prefix: string;
 
-	private engine?: AgendaLike;
+	private activeEngine?: AgendaLike;
 
 	constructor(options: CronSchedulerOptions) {
 		if (!options.service?.trim()) throw new Error("a cron scheduler needs a service name");
@@ -55,11 +55,11 @@ export class CronScheduler {
 	 * rather than quietly doubling the definitions.
 	 */
 	async start(): Promise<CronStartSummary> {
-		if (this.engine) throw new Error("cron scheduler is already started");
+		if (this.activeEngine) throw new Error("cron scheduler is already started");
 
 		const engine = this.options.engine ?? (await this.createEngine());
 
-		this.engine = engine;
+		this.activeEngine = engine;
 		engine.on("fail", (error, job) => {
 			this.logger.error("cron run failed", {
 				job: job.attrs.name,
@@ -83,6 +83,12 @@ export class CronScheduler {
 				// Only affects one-off rows, which here means the extra run a
 				// `runOnStart` job is given below. The repeating row stays.
 				removeOnComplete: true,
+
+				...definedFields({
+					logging: job.logging,
+					priority: job.priority,
+					backoff: job.backoff,
+				}),
 			});
 		}
 		await engine.start();
@@ -97,6 +103,13 @@ export class CronScheduler {
 				// extra run at startup has to be queued on its own rather than asked
 				// for here — `skipImmediate` only moves a plain interval.
 				skipImmediate: true,
+
+				...definedFields({
+					forkMode: job.forkMode,
+					startDate: job.startDate,
+					endDate: job.endDate,
+					skipDays: job.skipDays,
+				}),
 			});
 
 			if (job.runOnStart) await engine.now(this.qualify(job.name), job.data);
@@ -126,9 +139,9 @@ export class CronScheduler {
 	 * not exit on this call alone. Exit explicitly once shutdown is done.
 	 */
 	async stop(): Promise<void> {
-		if (!this.engine) return;
+		if (!this.activeEngine) return;
 
-		const result = await this.engine.drain({
+		const result = await this.activeEngine.drain({
 			timeout: this.options.drainTimeoutMs ?? DEFAULT_DRAIN_TIMEOUT_MS,
 			closeConnection: false,
 		});
@@ -139,7 +152,23 @@ export class CronScheduler {
 		if (result.timedOut && result.running > 0) {
 			this.logger.error("cron shutdown timed out", { running: result.running });
 		}
-		this.engine = undefined;
+		this.activeEngine = undefined;
+	}
+
+	/**
+	 * The underlying engine, once started — `undefined` before `start()` and
+	 * after `stop()`. `AgendaLike.on()` covers `fail`, `success`, `complete`
+	 * and `retry`, so a caller can hook into any of them directly:
+	 *
+	 * ```ts
+	 * await cron.start();
+	 * cron.engine?.on('retry', (job, details) => log.warn('retrying', details));
+	 * ```
+	 *
+	 * `fail` is also logged internally regardless of this — see `start()`.
+	 */
+	get engine(): AgendaLike | undefined {
+		return this.activeEngine;
 	}
 
 	/** Queues one run of a registered job now, on top of its schedule. */
@@ -161,9 +190,9 @@ export class CronScheduler {
 	}
 
 	private running(): AgendaLike {
-		if (!this.engine) throw new Error("cron scheduler is not started");
+		if (!this.activeEngine) throw new Error("cron scheduler is not started");
 
-		return this.engine;
+		return this.activeEngine;
 	}
 
 	private async createEngine(): Promise<AgendaLike> {
@@ -179,6 +208,7 @@ export class CronScheduler {
 			...(this.options.processEvery === undefined
 				? {}
 				: { processEvery: this.options.processEvery }),
+			...this.options.agendaOptions,
 		});
 
 		return agenda as unknown as AgendaLike;
@@ -200,4 +230,14 @@ export class CronScheduler {
 
 		return engine.cancel({ names: stale });
 	}
+}
+
+/**
+ * Keeps an `undefined` field out of the options object entirely, rather than
+ * set on it, so it reads as "not given" to Agenda instead of "explicitly
+ * unset" — the distinction the checks in `define()`'s options matter for
+ * (e.g. `logging` falling back to `loggingDefault`).
+ */
+function definedFields<T extends Record<string, unknown>>(fields: T): Partial<T> {
+	return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined)) as Partial<T>;
 }
