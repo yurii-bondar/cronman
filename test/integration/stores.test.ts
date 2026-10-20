@@ -139,5 +139,62 @@ for (const driver of DRIVERS) {
 			expect(summary.scheduled).toEqual([]);
 			expect(summary.removed).toBe(1);
 		}, RUN_TIMEOUT_MS);
+
+		it("runs a job again after a stall outlived the lock it had just taken", async () => {
+			const registry = new CronRegistry();
+			let runs = 0;
+
+			new CronJob({
+				name: "gamma",
+				schedule: "0 5 * * *",
+				maxRuntimeMs: 2_000,
+				handler: async () => {
+					runs += 1;
+				},
+				registry,
+			});
+
+			// A service of its own, so the order-dependent counts above stay as they are.
+			const cron = new CronScheduler({
+				service: `${service}-stall`,
+				store: driver.store(url as string),
+				jobs: registry.list(),
+				logger: fakeLogger(),
+				processEvery: "1 second",
+			});
+
+			running.push(cron);
+			await cron.start();
+
+			// The process "sleeps" right after it locks the job: from Agenda's own
+			// `locked` event until the next macrotask, its clock reads past the lock's
+			// lifetime — so the job's turn in the local queue finds the lock expired,
+			// the path on which Agenda 6.2.6 leaks it.
+			const engine = cron.engine as unknown as { logJobEvent(entry: { event: string }): void };
+			const logJobEvent = engine.logJobEvent.bind(engine);
+			const realNow = Date.now;
+			let stalled = false;
+
+			engine.logJobEvent = (entry) => {
+				if (entry.event === "locked" && !stalled) {
+					stalled = true;
+					Date.now = () => realNow() + 60_000;
+					setTimeout(() => {
+						Date.now = realNow;
+					}, 0);
+				}
+				logJobEvent(entry);
+			};
+
+			try {
+				await cron.runNow("gamma");
+				await waitFor(() => runs > 0);
+			} finally {
+				Date.now = realNow;
+			}
+
+			expect(stalled).toBe(true);
+			expect(runs).toBe(1);
+		}, RUN_TIMEOUT_MS + 10_000);
 	});
 }

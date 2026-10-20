@@ -310,6 +310,13 @@ runtime is what makes a job run twice at once**, because another replica may
 take a job whose lock has expired. When a job legitimately runs long, raise it
 rather than hoping.
 
+A stall of the whole process longer than `maxRuntimeMs` (a laptop asleep, a
+long GC pause, a throttled container) can land between Agenda locking a job and
+running it. Agenda 6.2.6 then drops the run but never gives the lock back
+in-process, and under `lockLimit: 1` that replica would never run the job
+again. cronman releases such a leaked lock before each poll and logs
+`cron released a lock Agenda had leaked`, so the job runs at its next turn.
+
 <a name="graceful-shutdown"><h2>Graceful shutdown</h2></a>
 
 ```ts

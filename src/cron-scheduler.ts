@@ -1,6 +1,7 @@
 import { Agenda } from "agenda";
 import { createBackend } from "./backends/create-backend.js";
 import { cronRegistry } from "./cron-registry.js";
+import { guardLockLeaks } from "./lock-leak-guard.js";
 import type { CronLogger, SchedulableCronJob } from "./models/cron-job.model.js";
 import type {
 	AgendaLike,
@@ -92,6 +93,14 @@ export class CronScheduler {
 			});
 		}
 		await engine.start();
+
+		// An engine this package built is the pinned Agenda, whose lock leak the
+		// guard covers; one that cannot be guarded means that version moved on.
+		if (!guardLockLeaks(engine, this.logger) && !this.options.engine) {
+			this.logger.error("cron cannot guard Agenda's lock leak on this engine", {
+				service: this.options.service,
+			});
+		}
 
 		const removed = await this.dropUnregistered(active);
 
